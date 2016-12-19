@@ -18,13 +18,32 @@ public class FileSenderFSM {
     };
     // all messages/conditions which can occur
     enum Msg {
-        RDT_SEND, TIMEOUT, RECEIVE
+        RDT_SEND, TIMEOUT, RECEIVE_NOTCORRUPT_ISACK
         //MEET_MAN, HI, TIME
     }
     // current state of the FSM
     private State currentState;
     // 2D array defining all transitions that can occur
     private Transition[][] transition;
+
+    /**
+     * Main
+     * @param args
+     */
+    public static void main(String[] args) {
+        FileSenderFSM FSM = new FileSenderFSM();
+
+        /**
+         if(notCorrupt(pkt)) {
+         FSM.processMsg(Msg.RDT_SEND, 10, -1);
+         }
+         **/
+
+        /**woman.processMsg(Msg.MEET_MAN);
+         woman.processMsg(Msg.HI);
+         woman.processMsg(Msg.TIME);
+         **/
+    }
 
     /**
      * constructor
@@ -35,10 +54,12 @@ public class FileSenderFSM {
         // (undefined transitions will be ignored)
         transition = new Transition[State.values().length] [Msg.values().length];
 
-        transition[State.WAIT0.ordinal()] [Msg.RDT_SEND.ordinal()]  = new RDT_send();
-        transition[State.WAIT0ACK.ordinal()] [Msg.RECEIVE.ordinal()]  = new Receive();
-        transition[State.WAIT0ACK.ordinal()] [Msg.TIMEOUT.ordinal()] = new Timeout();
-
+        transition[State.WAIT0.ordinal()] [Msg.RDT_SEND.ordinal()]  = new RDT_send();                       // Wait0 -> Wait0ACK
+        transition[State.WAIT0ACK.ordinal()] [Msg.TIMEOUT.ordinal()] = new Timeout();                       // Wait0ACK -> Wait0ACK
+        transition[State.WAIT0ACK.ordinal()] [Msg.RECEIVE_NOTCORRUPT_ISACK.ordinal()]  = new Receive();     // Wait0ACK -> Wait1
+        transition[State.WAIT1.ordinal()] [Msg.RDT_SEND.ordinal()] = new RDT_send();                        // Wait1 -> Wait1ACK
+        transition[State.WAIT1ACK.ordinal()] [Msg.TIMEOUT.ordinal()] = new Timeout();                       // Wait1ACK -> Wait1ACK
+        transition[State.WAIT1ACK.ordinal()] [Msg.RECEIVE_NOTCORRUPT_ISACK.ordinal()] = new Receive();      // Wait1ACK -> Wait0
 
         /**
          transition[State.IDLE.ordinal()] [Msg.MEET_MAN.ordinal()] = new SayHi();
@@ -47,21 +68,6 @@ public class FileSenderFSM {
          **/
         System.out.println("INFO FSM constructed, current state: "+currentState);
     }
-
-    public static void main(String[] args) {
-        FileSenderFSM FSM = new FileSenderFSM();
-
-        if(notCorrupt(pkt)) {
-            FSM.processMsg(Msg.RDT_SEND, 10, -1);
-        }
-
-
-        /**woman.processMsg(Msg.MEET_MAN);
-         woman.processMsg(Msg.HI);
-         woman.processMsg(Msg.TIME);
-         **/
-    }
-
     /**
      * Process a message (a condition has occurred).
      * @param input Message or condition that has occurred.
@@ -69,12 +75,11 @@ public class FileSenderFSM {
     public void processMsg(Msg input, int data, int rcvpkt){
         System.out.println("INFO Received "+input+" in state "+currentState);
         Transition trans = transition[currentState.ordinal()][input.ordinal()];
-        if(trans != null){
-            currentState = trans.execute(input, int data, int rcvpkt);
+        if(trans != null) {
+            currentState = trans.execute(input, data, rcvpkt);
         }
         System.out.println("INFO State: "+ currentState);
     }
-
     /**
      * Abstract base class for all transitions.
      * Derived classes need to override execute thereby defining the action
@@ -83,7 +88,6 @@ public class FileSenderFSM {
     abstract class Transition {
         abstract public State execute(Msg input, int data, int rcvpkt);
     }
-
 
     class RDT_send extends Transition {
         @Override
@@ -97,29 +101,23 @@ public class FileSenderFSM {
         }
     }
 
-    class Receive extends Transition {
-        @Override
-        public State execute(Msg input, int data, int rcvpkt) {
-
-
-            if (notCurrupt(data)&& isACK(data,0))  {
-                return State.WAIT1;
-            }
-            else {
-                return currentState;
-            }
-        }
-    }
-
     class Timeout extends Transition {
         @Override
         public State execute(Msg input, int data, int rcvpkt) {
             //udt_send(sendpkt)
             // start timer
             System.out.println("");
+            return State.WAIT1ACK;
         }
     }
 
+    class Receive extends Transition {
+        @Override
+        public State execute(Msg input, int data, int rcvpkt) {
+            if (currentState == State.WAIT0ACK) return State.WAIT1;
+            else return State.WAIT0;
+        }
+    }
 
     /**
     class SayHi extends Transition {
@@ -150,4 +148,4 @@ public class FileSenderFSM {
 }
 
 
-}
+
