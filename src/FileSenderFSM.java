@@ -2,9 +2,6 @@
  * Created by mx on 19.12.16.
  */
 public class FileSenderFSM {
-
-
-
     /**
      * Finate State Machine (FSM) Java Example: Woman
      * (lecture Slides for first lecture, p. 19)
@@ -39,8 +36,9 @@ public class FileSenderFSM {
         transition = new Transition[State.values().length] [Msg.values().length];
 
         transition[State.WAIT0.ordinal()] [Msg.RDT_SEND.ordinal()]  = new RDT_send();
-
         transition[State.WAIT0ACK.ordinal()] [Msg.RECEIVE.ordinal()]  = new Receive();
+        transition[State.WAIT0ACK.ordinal()] [Msg.TIMEOUT.ordinal()] = new Timeout();
+
 
         /**
          transition[State.IDLE.ordinal()] [Msg.MEET_MAN.ordinal()] = new SayHi();
@@ -83,11 +81,13 @@ public class FileSenderFSM {
      * to be performed whenever this transition occurs.
      */
     abstract class Transition {
-        abstract public State execute(Msg input, int data);
+        abstract public State execute(Msg input, int data, int rcvpkt);
     }
+
+
     class RDT_send extends Transition {
         @Override
-        public State execute(Msg input, int data) {
+        public State execute(Msg input, int data, int rcvpkt) {
             // currentState -> if
             // hier Code von Übergang:
             // sndpkt = make_pkt(0,data,checksum)
@@ -99,7 +99,9 @@ public class FileSenderFSM {
 
     class Receive extends Transition {
         @Override
-        public State execute(Msg input, int data) {
+        public State execute(Msg input, int data, int rcvpkt) {
+
+
             if (notCurrupt(data)&& isACK(data,0))  {
                 return State.WAIT1;
             }
@@ -109,6 +111,17 @@ public class FileSenderFSM {
         }
     }
 
+    class Timeout extends Transition {
+        @Override
+        public State execute(Msg input, int data, int rcvpkt) {
+            //udt_send(sendpkt)
+            // start timer
+            System.out.println("");
+        }
+    }
+
+
+    /**
     class SayHi extends Transition {
         @Override
         public State execute(Msg input) {
@@ -133,6 +146,7 @@ public class FileSenderFSM {
         }
 
     }
+     **/
 }
 
 
