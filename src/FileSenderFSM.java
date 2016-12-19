@@ -92,22 +92,27 @@ public class FileSenderFSM {
     class RDT_send extends Transition {
         @Override
         public State execute(Msg input, int data, int rcvpkt) {
-            // currentState -> if
-            // hier Code von Übergang:
-            // sndpkt = make_pkt(0,data,checksum)
-            // udt_send(sndpkt)
-            // start_timer()
-            return State.WAIT0ACK;
+            if(currentState == State.WAIT0) {
+                // sndpkt = make_pkt(0,checksum,data)               // sndpkt ggfs. Global
+                // udt_send(sndpkt)
+                // start_timer()
+                return State.WAIT0ACK;
+            } else {
+                // sndpkt = make_pkt(1,checksum,data)
+                // udt_send(sndpkt)
+                // start_timer()
+                return State.WAIT1ACK;
+            }
         }
     }
 
     class Timeout extends Transition {
         @Override
         public State execute(Msg input, int data, int rcvpkt) {
-            //udt_send(sendpkt)
-            // start timer
-            System.out.println("");
-            return State.WAIT1ACK;
+            /// /udt_send(sendpkt)
+            // start_timer()
+            if(currentState == State.WAIT0ACK) return State.WAIT0ACK;
+            else return State.WAIT1ACK;
         }
     }
 
@@ -119,32 +124,6 @@ public class FileSenderFSM {
         }
     }
 
-    /**
-    class SayHi extends Transition {
-        @Override
-        public State execute(Msg input) {
-            System.out.println("Hi!");
-            return State.HI_WAIT;
-        }
-    }
-
-    class AskForTime extends Transition {
-        @Override
-        public State execute(Msg input) {
-            System.out.println("Time?");
-            return State.TIME_WAIT;
-        }
-    }
-
-    class Finish extends Transition {
-        @Override
-        public State execute(Msg input) {
-            System.out.println("Thank you.");
-            return State.IDLE;
-        }
-
-    }
-     **/
 }
 
 
