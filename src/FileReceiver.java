@@ -49,7 +49,7 @@ public class FileReceiver {
 	 * Process a message (a condition has occurred).
 	 * @param input Message or condition that has occurred.
 	 */
-	public void processMsg(Msg input){
+	public void processMsg(Msg input) {
 		System.out.println("INFO Received "+input+" in state "+currentState);
 		Transition trans = transition[currentState.ordinal()][input.ordinal()];
 		if(trans != null){
