@@ -86,7 +86,7 @@ public class FileSenderFSM implements Runnable {
     public FileSenderFSM(InetAddress inet, int receiverPort, String localFile) throws SocketException {
 
 
-    this.inet = inet;                                                           // IP-Adress,
+        this.inet = inet;                                                       // IP-Adress,
         this.receiverPort =  receiverPort;                                      // Port to which FSM sends the pakets
         this.sendingSocket = new DatagramSocket();
         //this.receivingSocket = new DatagramSocket(receiverPort+1);
