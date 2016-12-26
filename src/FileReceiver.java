@@ -11,7 +11,7 @@ import java.net.DatagramSocket;
  * Class which models the state machine itself.
  *
  */
-public class FileReceiver {
+public class FileReceiver implements Runnable {
 	private boolean onceThru = false;
 	private OutputStream fileStream;
 	private DatagramSocket socket;
@@ -37,14 +37,26 @@ public class FileReceiver {
 		// define all valid state transitions for our state machine
 		// (undefined transitions will be ignored)
 		transition = new Transition[State.values().length] [Msg.values().length];
-		transition[State.WAIT_FOR_CONNECTION.ordinal()] [Msg.INCOMMING_CONNECTION.ordinal()] = new EstablishConnection();
-		transition[State.WAIT0.ordinal()] [Msg.SEQ0.ordinal()] = new ProcessPacket();
-		transition[State.WAIT0.ordinal()] [Msg.SEQ1.ordinal()] = new ResendAck();
-		transition[State.WAIT1.ordinal()] [Msg.SEQ0.ordinal()] = new ProcessPacket();
-		transition[State.WAIT1.ordinal()] [Msg.SEQ1.ordinal()] = new ResendAck();
+
+		transition[State.WAIT_FOR_CONNECTION.ordinal()] [Msg.INCOMMING_CONNECTION.ordinal()] = new EstablishConnection();	// unnötig
+
+		transition[State.WAIT0.ordinal()] [Msg.SEQ0.ordinal()] = new ProcessPacket(); 		// WAIT0 -> WAIT1
+		transition[State.WAIT0.ordinal()] [Msg.SEQ1.ordinal()] = new ResendAck();			// WAIT0 -> WAIT0
+		transition[State.WAIT1.ordinal()] [Msg.SEQ0.ordinal()] = new ProcessPacket();		// WAIT1 -> WAIT0
+		transition[State.WAIT1.ordinal()] [Msg.SEQ1.ordinal()] = new ResendAck();			// WAIT1 -> WAIT1
+
 		System.out.println("INFO FSM constructed, current state: "+currentState);
 	}
 	
+	public static void main(String[] args) {
+		FileReceiver receiver = new FileReceiver();
+		receiver.run();
+	}
+
+	public void run() {
+
+	}
+
 	/**
 	 * Process a message (a condition has occurred).
 	 * @param input Message or condition that has occurred.
