@@ -1,8 +1,6 @@
-
 import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.function.Function;
 import java.util.zip.CRC32;
@@ -16,6 +14,8 @@ import java.util.zip.CRC32;
  * 3. Checksum implementieren (mit CRC32) [x]
  * 4. Paketstruktur implementieren [x]
  *      Paketstruktur insgesamt 1400 Byte  ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Daten: 1388 Byte] [x]
+ *      Paketstruktur erstes Paket         ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Anzahl Pakete | Daten: 1384 Byte]
+ *
  * 5. send() [x]
  * 6. receive() [x]
  *      Implementiere/definiere ACKs (0 u. 1) [x]
@@ -24,7 +24,10 @@ import java.util.zip.CRC32;
  *
  * 7. Main [x]
  * 8. run -> Run-Methode steuert die Übergänge [x]
- * 9. Verlust implementieren
+ *
+ *
+ * 9. Übertragung FileName implementieren.
+ * 10. Verlust implementieren
  *
  */
 
