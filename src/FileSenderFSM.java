@@ -1,8 +1,10 @@
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
+
+import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.util.Arrays;
+import java.util.function.Function;
 import java.util.zip.CRC32;
 
 
@@ -17,8 +19,8 @@ import java.util.zip.CRC32;
  * 5. send() [x]
  * 6. receive() [x]
  *      Implementiere/definiere ACKs (0 u. 1) [x]
- *          Definition: ACK ist ein leeres ByteArray mit Sequenznummer und
- *          [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Daten: 1388 Byte]
+ *          Definition: ACK ist ein leeres ByteArray mit Sequenznummer und Checksumme.
+ *          [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Daten(empty): 1388 Byte]
  *
  * 7. Main [x]
  * 8. run -> Run-Methode steuert die Übergänge [x]
@@ -56,64 +58,57 @@ public class FileSenderFSM implements Runnable {
     private int receiverPort;
     // Socket which is used for sending data
     private final DatagramSocket sendingSocket;
-    // Socket which is used for receiving data (ACKs)
-    //private final DatagramSocket receivingSocket;
+    //
+    private final String fileName;
     // ByteArray which contains the Data, send to Receiver  // 12 Byte-Header (=4Byte Seqeunznummer + 8Byte Checksum)
     private byte[] dataForReceiver = new byte[1400];
     // ByteArray which contains the Data, send form Receiver
     byte[] dataFromReceiver = new byte[1400];
+    // First Packet Boolean
+    private boolean firstPkt = true;
     // Packet send to Receiver
     private DatagramPacket sndpkt;
     // Received Packet
     private DatagramPacket rcvpkt;
     // Stream of InputFile
     private FileInputStream inputFile;
-    // ACK0 ByteArray                       //
-    private final static byte[] ACK0 = new byte[1400];
-    // ACK1 ByteArray
-    private final static byte[] ACK1 = new byte[1400];
     // Offset of SeqNr in the header
     private static final int SeqNrOff = 8;
+    // lambda Expression for generating ACKs
+    public static final Function<Integer,byte[]> genACK = (seqNr) -> {
+        byte[] ACK = new byte[1400];
+
+        byte[] headerSeqNr = ByteBuffer.allocate(4).putInt(seqNr).array();
+        System.arraycopy(headerSeqNr,0, ACK, SeqNrOff,headerSeqNr.length);
+
+        CRC32 crc = new CRC32();
+        crc.update(ACK, SeqNrOff, ACK.length- SeqNrOff);
+
+        byte[] headerCheckSum = ByteBuffer.allocate(8).putLong(crc.getValue()).array();
+        System.arraycopy(headerCheckSum,0,ACK,0,headerCheckSum.length);
+        return ACK;
+    };
+    // ACK0 ByteArray
+    private static final byte[] ACK0 = genACK.apply(0);
+    // ACK1 ByteArray
+    private static final byte[] ACK1 = genACK.apply(1);
 
     /**
      * Constructor
      *
      * @param inet
      * @param receiverPort
-     * @param localFile
+     * @param localFileName
      * @throws SocketException
      */
-    public FileSenderFSM(InetAddress inet, int receiverPort, String localFile) throws SocketException {
-
+    public FileSenderFSM(InetAddress inet, int receiverPort, String localFileName) throws SocketException {
 
         this.inet = inet;                                                       // IP-Adress,
         this.receiverPort =  receiverPort;                                      // Port to which FSM sends the pakets
         this.sendingSocket = new DatagramSocket();
-        //this.receivingSocket = new DatagramSocket(receiverPort+1);
         this.rcvpkt = new DatagramPacket(dataFromReceiver,dataFromReceiver.length);
-
-        //Init ACK0
-        byte[] headerSeqNr = ByteBuffer.allocate(4).putInt(0).array();
-        System.arraycopy(headerSeqNr,0, ACK0, SeqNrOff,headerSeqNr.length);
-
-        CRC32 crc = new CRC32();
-        crc.update(ACK0, SeqNrOff, ACK0.length- SeqNrOff);
-
-        byte[] headerCheckSum = ByteBuffer.allocate(8).putLong(crc.getValue()).array();
-        System.arraycopy(headerCheckSum,0, ACK0,0,headerCheckSum.length);       // add headerCheckSum to DataArray
-
-
-        //Init ACK1                                                                      TODO: Als Lambda Auslagern!
-        headerSeqNr = ByteBuffer.allocate(4).putInt(1).array();
-        System.arraycopy(headerSeqNr,0, ACK1, SeqNrOff,headerSeqNr.length);
-
-        crc = new CRC32();
-        crc.update(ACK1, SeqNrOff, ACK1.length- SeqNrOff);
-
-        headerCheckSum = ByteBuffer.allocate(8).putLong(crc.getValue()).array();
-        System.arraycopy(headerCheckSum,0, ACK1,0,headerCheckSum.length);               // add headerCheckSum to DataArray
-
-        setFileStream(localFile);
+        this.fileName = localFileName;
+        setFileStream(localFileName);
 
 
         currentState = State.WAIT0;
@@ -140,10 +135,10 @@ public class FileSenderFSM implements Runnable {
     public static void main(String[] args) throws IOException {
 
         // INPUT: File To Send
-        String localFile = args[0];        // Program-Argument: READFile.txt
+        String localFileName = args[0];        // Program-Argument: READFile.txt
 
         // CREAT & RUN FSM
-        FileSenderFSM FSM = new FileSenderFSM(InetAddress.getLocalHost(),9876,localFile);   // FSM Initializiation
+        FileSenderFSM FSM = new FileSenderFSM(InetAddress.getLocalHost(),9876,localFileName);   // FSM Initializiation
         FSM.run();
 
         // FSM Terminated
@@ -158,41 +153,20 @@ public class FileSenderFSM implements Runnable {
     @Override
     public void run() {
         try {
-            while(inputFile.available() != 0) {                         //
+            while(inputFile.available() != 0) {
+                System.out.println("-------------------------------------------------");
                 processMsg(Msg.RDT_SEND);
-                while(!receive() || isCorruptORNotACK()) {                                            // Was passiert wenn isCorruptORNotACK?
-                    processMsg(Msg.TIMEOUT);                                                            // Timeout umbenenen in Timeout_OR_Corrupt_NotACK
+                while(!receive() || isCorruptORNotACK()) {
+                processMsg(Msg.TIMEOUT);                                                            // Timeout umbenenen in Timeout_OR_Corrupt_NotACK
                 }
                 processMsg(Msg.RECEIVE_NOTCORRUPT_ISACK);
             }
+
         } catch (IOException e) {
             e.printStackTrace();
         }
-        /**woman.processMsg(Msg.MEET_MAN);
-         woman.processMsg(Msg.HI);
-         woman.processMsg(Msg.TIME);
-         **/
     }
 
-    /**
-     * Generiert DatagramPacket which can be send to receiver
-     *
-     * Joins the data with the header (SeqNr + CheckSum)
-     * @param SeqNr
-     * @return
-     */
-    private DatagramPacket makePacket(int SeqNr) {
-        byte[] headerSeqNr = ByteBuffer.allocate(4).putInt(SeqNr).array();
-        System.arraycopy(headerSeqNr,0, dataForReceiver,8,headerSeqNr.length);              // add headerSeqNr to DataArray
-
-        CRC32 crc = new CRC32();
-        crc.update(dataForReceiver,8, dataForReceiver.length-8);
-
-        byte[] headerCheckSum = ByteBuffer.allocate(8).putLong(crc.getValue()).array();
-        System.arraycopy(headerCheckSum,0, dataForReceiver,0,headerCheckSum.length);       // add headerCheckSum to DataArray
-
-        return new DatagramPacket(dataForReceiver, dataForReceiver.length);
-    }
 
     /**
      * Sends
@@ -204,7 +178,6 @@ public class FileSenderFSM implements Runnable {
 
         try {
             sendingSocket.send(sndpkt);
-
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -236,9 +209,9 @@ public class FileSenderFSM implements Runnable {
         boolean corrupt;
 
         if(currentState == State.WAIT0ACK){
-            corrupt = !rcvpkt.getData().equals(ACK0);   // Cheksummenprüfung hier nicht nötig, da getData jedes mal gleich sein muss. (incl. Prüfsumme) - Ein ACK sieht immer gleich aus und hat immer die gleiche Prüfsumme
+            corrupt = !Arrays.equals(ACK0,rcvpkt.getData());   // Cheksummenprüfung hier nicht nötig, da getData jedes mal gleich sein muss. (incl. Prüfsumme) - Ein ACK sieht immer gleich aus und hat immer die gleiche Prüfsumme
         } else {
-            corrupt = !rcvpkt.getData().equals(ACK1);
+            corrupt = !Arrays.equals(ACK1,rcvpkt.getData());
         }
         return corrupt;
     }
@@ -280,6 +253,28 @@ public class FileSenderFSM implements Runnable {
     }
 
     /**
+     * Generiert DatagramPacket which can be send to receiver
+     *
+     * Joins the data with the header (SeqNr + CheckSum)
+     * @param SeqNr
+     * @return
+     */
+    private DatagramPacket makePacket(int SeqNr) {
+        byte[] headerSeqNr = ByteBuffer.allocate(4).putInt(SeqNr).array();
+        System.arraycopy(headerSeqNr,0, dataForReceiver,8,headerSeqNr.length);              // add headerSeqNr to DataArray
+
+        CRC32 crc = new CRC32();
+        crc.update(dataForReceiver,8, dataForReceiver.length-8);
+        //System.out.println(crc.getValue());
+        byte[] headerCheckSum = ByteBuffer.allocate(8).putLong(crc.getValue()).array();
+        System.arraycopy(headerCheckSum,0, dataForReceiver,0,headerCheckSum.length);       // add headerCheckSum to DataArray
+
+
+        System.out.println(ByteBuffer.wrap(dataForReceiver).getInt(12));
+        return new DatagramPacket(dataForReceiver, dataForReceiver.length);
+    }
+
+    /**
      * Send Transition
      *
      */
@@ -287,10 +282,32 @@ public class FileSenderFSM implements Runnable {
         @Override
         public State execute(Msg input) {
             State result = null;
-            int timeout = 1000;
+            int timeout = 10000;
 
             try {
-                inputFile.read(dataForReceiver,12, dataForReceiver.length-12);      // reads 1388 Bytes and keeps 12Bytes empty for the header
+                if(firstPkt){
+                    int numberOfpkts = Math.max(1,Math.round((inputFile.available()-1388-4)/1388+1));
+                    System.out.println(numberOfpkts);
+
+                    inputFile.read(dataForReceiver,12+4, dataForReceiver.length-12-4);
+
+                    byte[] headerPkts = ByteBuffer.allocate(4).putInt(numberOfpkts).array();
+
+                    System.arraycopy(headerPkts,0,dataForReceiver,12,headerPkts.length);
+                    System.out.println(dataForReceiver[15]);
+
+
+                    /**
+                    ByteBuffer.wrap(fileName.getBytes());
+                    byte[] headerPkts = ByteBuffer.allocate(4).putInt(fileName.toCharArray().length);
+                    System.arraycopy(,0,dataForReceiver,16,);
+                     **/
+
+                    firstPkt = false;
+                } else {
+                    inputFile.read(dataForReceiver,12, dataForReceiver.length-12);      // reads 1388 Bytes and keeps 12Bytes empty for the header
+                }
+
 
                 if(currentState == State.WAIT0) {
                     sndpkt = makePacket(State.WAIT0.ordinal());         // sndpkt = make_pkt(0,checksum,data)
@@ -333,7 +350,7 @@ public class FileSenderFSM implements Runnable {
         public State execute(Msg input) {
 
             try {
-                sendingSocket.setSoTimeout(-1);             // stopTimer
+                sendingSocket.setSoTimeout(0);                               // stopTimer
             } catch (SocketException e) {
                 e.printStackTrace();
             }
@@ -341,7 +358,6 @@ public class FileSenderFSM implements Runnable {
             else return State.WAIT0;
         }
     }
-
 }
 
 
