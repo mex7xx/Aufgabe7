@@ -8,19 +8,23 @@ import java.util.zip.CRC32;
 
 /**
  * Created by mx on 19.12.16.
- * TODO:
+ * //TODO:
  * 1. File Reader implementieren [x]
  * 2. File zerkleinern - mit read()[x]
  * 3. Checksum implementieren (mit CRC32) [x]
  * 4. Paketstruktur implementieren [x]
+ *
  *      Paketstruktur insgesamt 1400 Byte  ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Daten: 1388 Byte] [x]
- *      Paketstruktur erstes Paket         ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Anzahl Pakete | Daten: 1384 Byte]
+ *      Paketstruktur erstes Paket         ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Anzahl Pakete: int 4 Byte | Daten: 1384 Byte]
+ *
  *
  * 5. send() [x]
  * 6. receive() [x]
  *      Implementiere/definiere ACKs (0 u. 1) [x]
+ *
  *          Definition: ACK ist ein leeres ByteArray mit Sequenznummer und Checksumme.
  *          [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Daten(empty): 1388 Byte]
+ *
  *
  * 7. Main [x]
  * 8. run -> Run-Methode steuert die Übergänge [x]
@@ -28,7 +32,7 @@ import java.util.zip.CRC32;
  *
  * 9. Übertragung FileName implementieren.
  * 10. Verlust implementieren
- *
+ * 11. Fin implementieren
  */
 
 public class FileSenderFSM implements Runnable {
@@ -48,7 +52,7 @@ public class FileSenderFSM implements Runnable {
     };
     // all messages/conditions which can occur
     enum Msg {
-        RDT_SEND, TIMEOUT, RECEIVE_NOTCORRUPT_ISACK
+        RDT_SEND, TIMEOUT_OR_CORRUPT, RECEIVE_NOTCORRUPT_ISACK
         //MEET_MAN, HI, TIME
     }
     // current state of the FSM
@@ -120,10 +124,10 @@ public class FileSenderFSM implements Runnable {
         transition = new Transition[State.values().length] [Msg.values().length];
 
         transition[State.WAIT0.ordinal()] [Msg.RDT_SEND.ordinal()]  = new RDT_send();                       // Wait0 -> Wait0ACK
-        transition[State.WAIT0ACK.ordinal()] [Msg.TIMEOUT.ordinal()] = new Timeout();                       // Wait0ACK -> Wait0ACK
+        transition[State.WAIT0ACK.ordinal()] [Msg.TIMEOUT_OR_CORRUPT.ordinal()] = new Timeout();                       // Wait0ACK -> Wait0ACK
         transition[State.WAIT0ACK.ordinal()] [Msg.RECEIVE_NOTCORRUPT_ISACK.ordinal()]  = new Receive();     // Wait0ACK -> Wait1
         transition[State.WAIT1.ordinal()] [Msg.RDT_SEND.ordinal()] = new RDT_send();                        // Wait1 -> Wait1ACK
-        transition[State.WAIT1ACK.ordinal()] [Msg.TIMEOUT.ordinal()] = new Timeout();                       // Wait1ACK -> Wait1ACK
+        transition[State.WAIT1ACK.ordinal()] [Msg.TIMEOUT_OR_CORRUPT.ordinal()] = new Timeout();                       // Wait1ACK -> Wait1ACK
         transition[State.WAIT1ACK.ordinal()] [Msg.RECEIVE_NOTCORRUPT_ISACK.ordinal()] = new Receive();      // Wait1ACK -> Wait0
 
         System.out.println("INFO FSM constructed, current state: "+currentState);
@@ -160,7 +164,7 @@ public class FileSenderFSM implements Runnable {
                 System.out.println("-------------------------------------------------");
                 processMsg(Msg.RDT_SEND);
                 while(!receive() || isCorruptORNotACK()) {
-                processMsg(Msg.TIMEOUT);                                                            // Timeout umbenenen in Timeout_OR_Corrupt_NotACK
+                processMsg(Msg.TIMEOUT_OR_CORRUPT);                                                            // Timeout umbenenen in Timeout_OR_Corrupt_NotACK
                 }
                 processMsg(Msg.RECEIVE_NOTCORRUPT_ISACK);
             }
@@ -272,10 +276,11 @@ public class FileSenderFSM implements Runnable {
         byte[] headerCheckSum = ByteBuffer.allocate(8).putLong(crc.getValue()).array();
         System.arraycopy(headerCheckSum,0, dataForReceiver,0,headerCheckSum.length);       // add headerCheckSum to DataArray
 
-
-        System.out.println(ByteBuffer.wrap(dataForReceiver).getInt(12));
+        // System.out.println(ByteBuffer.wrap(dataForReceiver).getInt(12));                 //
         return new DatagramPacket(dataForReceiver, dataForReceiver.length);
     }
+
+
 
     /**
      * Send Transition
@@ -289,22 +294,23 @@ public class FileSenderFSM implements Runnable {
 
             try {
                 if(firstPkt){
-                    int numberOfpkts = Math.max(1,Math.round((inputFile.available()-1388-4)/1388+1));
-                    System.out.println(numberOfpkts);
+                    int numberOfpkts = Math.max(1,(int)((inputFile.available()-1388-4)/1388+2));            // +2 weil... abrunden + erstes pkt
+
+                    //System.out.println(numberOfpkts);
 
                     inputFile.read(dataForReceiver,12+4, dataForReceiver.length-12-4);
 
                     byte[] headerPkts = ByteBuffer.allocate(4).putInt(numberOfpkts).array();
 
                     System.arraycopy(headerPkts,0,dataForReceiver,12,headerPkts.length);
-                    System.out.println(dataForReceiver[15]);
+                    //System.out.println(dataForReceiver[15]);
 
 
                     /**
                     ByteBuffer.wrap(fileName.getBytes());
                     byte[] headerPkts = ByteBuffer.allocate(4).putInt(fileName.toCharArray().length);
                     System.arraycopy(,0,dataForReceiver,16,);
-                     **/
+                    **/
 
                     firstPkt = false;
                 } else {

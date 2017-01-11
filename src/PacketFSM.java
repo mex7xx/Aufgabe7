@@ -21,6 +21,4 @@ public class PacketFSM {
             DatagramSocket clientSocket = new DatagramSocket();
             clientSocket.send(packet);
     }
-
-
 }

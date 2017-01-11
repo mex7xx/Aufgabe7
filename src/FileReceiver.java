@@ -5,8 +5,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.util.stream.Stream;
+import java.util.Random;
 import java.util.zip.CRC32;
 
 /**
@@ -83,15 +82,21 @@ public class FileReceiver implements Runnable {
 		System.out.println("END - File received ");
 	}
 
+	/**
+	 * Run Method
+	 *
+	 * Steers the transitions of the FSM
+	 */
 	public void run() {
-		int count = 0;
+		int count = 1;
 		while (!endOfFile) {
-			System.out.println("-------------------------------------------------");
 			receive();
+			System.out.println("-------------------------------------------------");
 			if(!corrupt()&&hasSeq(currentState.ordinal())) {
+				System.out.println(">> Pkt.: " + count);
 				if(currentState == State.WAIT0) processMsg(Msg.RCV_NOTCORRUPT_SEQ0);
 				else processMsg(Msg.RCV_NOTCORRUPT_SEQ1);
-				if(++count == numberOfpkts) endOfFile = true;
+				if(count++ >= numberOfpkts) endOfFile = true;
 			}
 			else {
 				if(currentState == State.WAIT0) processMsg(Msg.RESEND_ACK1);
@@ -100,9 +105,16 @@ public class FileReceiver implements Runnable {
 		}
 	}
 
+	/**
+	 *
+	 *
+	 *
+	 */
 	public void receive() {
 		try {
-			receivingSocket.receive(rcvpkt);
+			FilterSim filter = new FilterSim(receivingSocket);
+			rcvpkt = filter.read();											// Simulates Transfer-Failures and Errors of the data
+
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -121,11 +133,17 @@ public class FileReceiver implements Runnable {
 		return number == receivedNumber;
 	}
 
+	/**
+	 *
+	 * @param data
+	 * @param off
+	 * @param length
+     */
 	public void deliverData(byte[]data, int off, int length) {
 		try {
 			if(firstPkt) {
 				numberOfpkts = ByteBuffer.wrap(data).getInt(12);
-				System.out.println(numberOfpkts);
+				System.out.println(" >> Header of 1st pkt: [Number of Pkts]: " + numberOfpkts);
 				off = off+4;
 				length = length -4;
 				firstPkt= false;
