@@ -30,7 +30,6 @@ import java.util.zip.CRC32;
  * 7. Main [x]
  * 8. run -> Run-Methode steuert die Übergänge [x]
  *
- *
  * 9. Übertragung FileName implementieren.
  * 10. Verlust implementieren [x]
  * 11. Fin implementieren
@@ -129,10 +128,10 @@ public class FileSenderFSM implements Runnable {
         transition = new Transition[State.values().length] [Msg.values().length];
 
         transition[State.WAIT0.ordinal()] [Msg.RDT_SEND.ordinal()]  = new RDT_send();                       // Wait0 -> Wait0ACK
-        transition[State.WAIT0ACK.ordinal()] [Msg.TIMEOUT_OR_CORRUPT.ordinal()] = new Timeout();                       // Wait0ACK -> Wait0ACK
+        transition[State.WAIT0ACK.ordinal()] [Msg.TIMEOUT_OR_CORRUPT.ordinal()] = new Timeout();            // Wait0ACK -> Wait0ACK
         transition[State.WAIT0ACK.ordinal()] [Msg.RECEIVE_NOTCORRUPT_ISACK.ordinal()]  = new Receive();     // Wait0ACK -> Wait1
         transition[State.WAIT1.ordinal()] [Msg.RDT_SEND.ordinal()] = new RDT_send();                        // Wait1 -> Wait1ACK
-        transition[State.WAIT1ACK.ordinal()] [Msg.TIMEOUT_OR_CORRUPT.ordinal()] = new Timeout();                       // Wait1ACK -> Wait1ACK
+        transition[State.WAIT1ACK.ordinal()] [Msg.TIMEOUT_OR_CORRUPT.ordinal()] = new Timeout();            // Wait1ACK -> Wait1ACK
         transition[State.WAIT1ACK.ordinal()] [Msg.RECEIVE_NOTCORRUPT_ISACK.ordinal()] = new Receive();      // Wait1ACK -> Wait0
 
         System.out.println("INFO FSM constructed, current state: "+currentState);
@@ -146,9 +145,8 @@ public class FileSenderFSM implements Runnable {
      */
     public static void main(String[] args) throws IOException {
 
-
         // INPUT: File To Send
-        String localFileName = args[0];        // Program-Argument: READFile.txt
+        String localFileName = args[0];                                     // Program-Argument: READFile.txt
 
         // CREAT & RUN FSM
         FileSenderFSM FSM = new FileSenderFSM(InetAddress.getLocalHost(),9876,localFileName);   // FSM Initializiation
@@ -161,9 +159,7 @@ public class FileSenderFSM implements Runnable {
     /**
      * Run Method
      *
-     *
      * Directs the transitions of the FSM for sending the InputFile.
-     *
      */
     @Override
     public void run() {
@@ -182,9 +178,8 @@ public class FileSenderFSM implements Runnable {
         }
     }
 
-
     /**
-     * Sends
+     * Sends DatagramPacket to the sender
      * @param sndpkt
      */
     private void unreliableSend(DatagramPacket sndpkt) {
@@ -268,26 +263,49 @@ public class FileSenderFSM implements Runnable {
     }
 
     /**
-     * Generiert DatagramPacket which can be send to receiver
+     * Generates DatagramPacket out of the read data, which can be send to receiver
      *
-     * Joins the data with the header (SeqNr + CheckSum)
+     * And adds the header (SeqNr + CheckSum) to the read Data.
      * @param SeqNr
-     * @return
+     * @return DatagramPacket
      */
-    private DatagramPacket makePacket(int SeqNr) {
+    private DatagramPacket readDataToPacket(int SeqNr) throws IOException {
+
+        if(firstPkt){                                     // Adds header parts only for the first packet
+            firstPkt = false;
+            inputFile.read(dataForReceiver,12+4+4+fileName.getBytes().length, dataForReceiver.length-12-4-4-fileName.getBytes().length);
+
+            int numberOfpkts = (int) Math.ceil((inputFile.available()/(double)1388+ 1));
+
+            //Counter for Receiver to recognize the end
+            System.out.println("End after "+ numberOfpkts);
+            byte[] headerPkts = ByteBuffer.allocate(4).putInt(numberOfpkts).array();
+            System.arraycopy(headerPkts,0,dataForReceiver,12,headerPkts.length);
+
+            // Number of Bytes for FileName
+            byte[] headerNumberForBytesName = ByteBuffer.allocate(4).putInt(fileName.getBytes().length).array();
+            System.arraycopy(headerNumberForBytesName,0,dataForReceiver,12+4,headerNumberForBytesName.length);
+            // Bytes of FileName
+            byte[] NameData = ByteBuffer.allocate(fileName.getBytes().length).put(fileName.getBytes()).array();
+            System.arraycopy(NameData,0,dataForReceiver,12+4+4,NameData.length);
+
+        } else {
+            inputFile.read(dataForReceiver,12, dataForReceiver.length-12);      // reads 1388 Bytes and keeps 12Bytes empty for the header
+        }
+
+        // 12 Byte header gets added
+
         byte[] headerSeqNr = ByteBuffer.allocate(4).putInt(SeqNr).array();
         System.arraycopy(headerSeqNr,0, dataForReceiver,8,headerSeqNr.length);              // add headerSeqNr to DataArray
 
         CRC32 crc = new CRC32();
         crc.update(dataForReceiver,8, dataForReceiver.length-8);
-        //System.out.println(crc.getValue());
         byte[] headerCheckSum = ByteBuffer.allocate(8).putLong(crc.getValue()).array();
         System.arraycopy(headerCheckSum,0, dataForReceiver,0,headerCheckSum.length);       // add headerCheckSum to DataArray
 
-        // System.out.println(ByteBuffer.wrap(dataForReceiver).getInt(12));                //
+
         return new DatagramPacket(dataForReceiver, dataForReceiver.length);
     }
-
 
     /**
      * Send Transition
@@ -300,51 +318,13 @@ public class FileSenderFSM implements Runnable {
             int timeout = 10000;
 
             try {
-                if(firstPkt){
-                    firstPkt = false;
-                    inputFile.read(dataForReceiver,12+4+4+fileName.getBytes().length, dataForReceiver.length-12-4-4-fileName.getBytes().length);
-
-                    //System.out.println(new String(dataForReceiver));
-
-                    int numberOfpkts = (int) Math.ceil((inputFile.available()/(double)1388+ 1));
-
-                    /**
-                    System.out.println((inputFile.available()-1388-20-fileName.getBytes().length)/(double)1388+ 1);
-                    System.out.println(Math.ceil((inputFile.available()-1388-4)/(double)1388 + 1));
-                    **/
-
-                    System.out.println("End after "+ numberOfpkts);
-                    byte[] headerPkts = ByteBuffer.allocate(4).putInt(numberOfpkts).array();
-                    System.arraycopy(headerPkts,0,dataForReceiver,12,headerPkts.length);
-
-                    // FileName
-
-                    /**fileName.getBytes()
-                    ByteBuffer.wrap(fileName.getBytes()).asCharBuffer().toString();
-                    **/
-
-                    System.out.println(fileName.getBytes().length);
-                    byte[] headerNumberForBytesName = ByteBuffer.allocate(4).putInt(fileName.getBytes().length).array();
-                    System.arraycopy(headerNumberForBytesName,0,dataForReceiver,12+4,headerNumberForBytesName.length);
-
-                    byte[] NameData = ByteBuffer.allocate(fileName.getBytes().length).put(fileName.getBytes()).array();
-
-                    System.arraycopy(NameData,0,dataForReceiver,12+4+4,NameData.length);
-                    System.out.println(new String(NameData));
-
-                    System.out.println(new String(Arrays.copyOfRange(dataForReceiver,20,20+fileName.getBytes().length)));
-
-                } else {
-                    inputFile.read(dataForReceiver,12, dataForReceiver.length-12);      // reads 1388 Bytes and keeps 12Bytes empty for the header
-                }
-
                 if(currentState == State.WAIT0) {
-                    sndpkt = makePacket(State.WAIT0.ordinal());         // sndpkt = make_pkt(0,checksum,data)
+                    sndpkt = readDataToPacket(State.WAIT0.ordinal());         // sndpkt = make_pkt(0,checksum,data)
                     unreliableSend(sndpkt);                             // udt_send(sndpkt)
                     sendingSocket.setSoTimeout(timeout);                // start_timer() // Timeout zählt erst runter wenn socket in receive Funktion steht.
                     result = State.WAIT0ACK;
                 } else {
-                    sndpkt = makePacket(State.WAIT1.ordinal());         // sndpkt = make_pkt(1,checksum,data)
+                    sndpkt = readDataToPacket(State.WAIT1.ordinal());         // sndpkt = make_pkt(1,checksum,data)
                     unreliableSend(sndpkt);                             // udt_send(sndpkt)
                     sendingSocket.setSoTimeout(timeout);                // start_timer()    //Timeout zählt erst runter wenn socket in receive Funktion steht.
                     result = State.WAIT1ACK;
@@ -369,7 +349,6 @@ public class FileSenderFSM implements Runnable {
             else return State.WAIT1ACK;
         }
     }
-
     /**
      * Receive Transition
      *

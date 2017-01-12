@@ -5,6 +5,8 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.zip.CRC32;
 
@@ -59,9 +61,7 @@ public class FileReceiver implements Runnable {
 	public FileReceiver(int receivingPort) throws FileNotFoundException, SocketException {
 		currentState = State.WAIT0;
 
-
-		//TODO:
-		file = new FileOutputStream("Recieved_File.txt");
+		//file = new FileOutputStream("Recieved_File.txt");
 
 		// init Socket
 		receivingSocket = new DatagramSocket(receivingPort);
@@ -90,9 +90,7 @@ public class FileReceiver implements Runnable {
 	}
 
 	/**
-	 * Run Method
-	 *
-	 * Steers the transitions of the FSM
+	 * the run method steers the transitions of the FSM.
 	 */
 	public void run() {
 		int count = 1;
@@ -113,13 +111,10 @@ public class FileReceiver implements Runnable {
 	}
 
 	/**
-	 *
-	 *
-	 *
+	 * function waits for receiving pkts from the sender.
 	 */
-	public void receive() {
+	private void receive() {
 		try {
-
 			rcvpkt = filter.read();							// Simulates Transfer-Failures and Errors in the received data
 
 		} catch (IOException e) {
@@ -133,7 +128,7 @@ public class FileReceiver implements Runnable {
 	 *
 	 * @return boolean
      */
-	public boolean corrupt() {
+	private boolean corrupt() {
 		long receivedChecksum = ByteBuffer.wrap(rcvpkt.getData(),0,8).getLong();
 
 		CRC32 crc = new CRC32();
@@ -148,20 +143,19 @@ public class FileReceiver implements Runnable {
 	 * @param number sequence number
 	 * @return boolean
      */
-	public boolean hasSeq(int number) {
+	private boolean hasSeq(int number) {
 		int receivedNumber = ByteBuffer.wrap(rcvpkt.getData(),8,4).getInt();
 		return number == receivedNumber;
 	}
 
 	/**
-	 *
 	 * Delivers data to the File Writer for writing the received bytes to a file
 	 *
 	 * @param data
 	 * @param off
 	 * @param length
      */
-	public void deliverData(byte[]data, int off, int length) {
+	private void deliverData(byte[]data, int off, int length) {
 		try {
 			if(firstPkt) {
 				firstPkt= false;
@@ -171,16 +165,17 @@ public class FileReceiver implements Runnable {
 				off = off+4;
 				length = length -4;
 
-
 				int lengthName = ByteBuffer.wrap(data).getInt(16);										// Number of Bytes for the transferd FileName
 				System.out.println(lengthName);
 
 				off = off + 4;
 				length = length - 4;
 
-				//name = new byte[lengthName];
 				String s = new String (Arrays.copyOfRange(data,20,20+lengthName));
 				System.out.println(s);
+
+				Files.createDirectories(Paths.get("rcv"));
+				file = new FileOutputStream("rcv/"+s);
 
 				off = off + lengthName;
 				length = length - lengthName;
@@ -197,7 +192,7 @@ public class FileReceiver implements Runnable {
 	 *
 	 * @param SeqNr
      */
-	public void sendACK(int SeqNr) {
+	private void sendACK(int SeqNr) {
 		try {
 			if(SeqNr == 0) receivingSocket.send(new DatagramPacket(ACK0,ACK0.length,rcvpkt.getAddress(),rcvpkt.getPort()));
 			if(SeqNr == 1) receivingSocket.send(new DatagramPacket(ACK1,ACK1.length,rcvpkt.getAddress(),rcvpkt.getPort()));
@@ -254,5 +249,4 @@ public class FileReceiver implements Runnable {
 			return currentState;
 		}
 	}
-
 }
