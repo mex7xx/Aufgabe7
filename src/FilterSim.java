@@ -44,7 +44,7 @@ public class FilterSim {
             if (rand <= 0.1) {												// FehlerSimmulation: Paket wird verloren  == 10%
                 nothingReceived = true;                                     // Receiver
             } else {
-                if (rand <= 0.5) {                            				// FehlerSimmulation: Bitfehler == 40%
+                if (rand <= 0.15) {                            				// FehlerSimmulation: Bitfehler == 5%
                     byte[] corruptData = rcvpkt.getData();
                     int index = new Random().nextInt(rcvpkt.getLength() - 1);
 
@@ -54,7 +54,7 @@ public class FilterSim {
                     System.arraycopy(changedByte, 0, corruptData, index, 1);
                     rcvpkt.setData(corruptData);
                 } else {
-                    if (rand <= 0.8) {     			 						// FehlerSimulation: Paket wird dupliziert == 30%
+                    if (rand <= 0.20) {     			 						// FehlerSimulation: Paket wird dupliziert == 5%
                         rcvpkt = lastrcvpkt;
                     }
                 }

@@ -8,16 +8,15 @@ import java.util.zip.CRC32;
 
 /**
  * Created by mx on 19.12.16.
- * //TODO:
+ *
  * 1. File Reader implementieren [x]
  * 2. File zerkleinern - mit read()[x]
  * 3. Checksum implementieren (mit CRC32) [x]
  * 4. Paketstruktur implementieren [x]
  *
- *     Paketstruktur insgesamt 1400 Byte  ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Daten: 1388 Byte] [x]
+ *     Paketstruktur allgemein 1400 Byte  ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Daten: 1388 Byte] [x]
  *
- *     Paketstruktur erstes Paket variabel->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Anzahl Pakete: int 4 Byte | Anzahl der benötigten Bytes für FileName: int 4 Byte | FileName: variabel | Daten: RestX Byte]
- *
+ *     Paketstruktur erstes Paket (variabel) ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Anzahl Pakete: int 4 Byte | Anzahl der benötigten Bytes für FileName: int 4 Byte | FileName: variabel | Daten: RestX Byte]
  *
  * 5. send() [x]
  * 6. receive() [x]
@@ -30,9 +29,9 @@ import java.util.zip.CRC32;
  * 7. Main [x]
  * 8. run -> Run-Methode steuert die Übergänge [x]
  *
- * 9. Übertragung FileName implementieren.
+ * 9. Übertragung FileName implementieren. [x]
  * 10. Verlust implementieren [x]
- * 11. Fin implementieren
+ *
  */
 
 /**
@@ -103,6 +102,10 @@ public class FileSenderFSM implements Runnable {
     private static final byte[] ACK0 = genACK.apply(0);
     // ACK1 ByteArray
     private static final byte[] ACK1 = genACK.apply(1);
+    //
+    long time1;
+    //
+    int timeout = 10000;
 
     /**
      * Constructor
@@ -150,6 +153,7 @@ public class FileSenderFSM implements Runnable {
 
         // CREAT & RUN FSM
         FileSenderFSM FSM = new FileSenderFSM(InetAddress.getLocalHost(),9876,localFileName);   // FSM Initializiation
+
         FSM.run();
 
         // FSM Terminated
@@ -204,6 +208,9 @@ public class FileSenderFSM implements Runnable {
         boolean receivedSomething = false;
         try {
             sendingSocket.receive(rcvpkt);
+            long time = System.currentTimeMillis();
+            timeout =Math.max(1,(int) (2*(time-time1)));    // mindestens 1 milsec Timout da 0 den timeout deaktiviert // nur wichtig bei localhostÜbertragungen
+
             receivedSomething = true;
         } catch (IOException e) {
         }
@@ -315,8 +322,8 @@ public class FileSenderFSM implements Runnable {
         @Override
         public State execute(Msg input) {
             State result = null;
-            int timeout = 10000;
 
+            time1 = System.currentTimeMillis();
             try {
                 if(currentState == State.WAIT0) {
                     sndpkt = readDataToPacket(State.WAIT0.ordinal());         // sndpkt = make_pkt(0,checksum,data)
@@ -351,7 +358,6 @@ public class FileSenderFSM implements Runnable {
     }
     /**
      * Receive Transition
-     *
      */
     class Receive extends Transition {
         @Override

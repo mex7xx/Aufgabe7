@@ -15,16 +15,14 @@ import java.util.zip.CRC32;
  * (lecture Slides for first lecture, p. 19)
  */
 
-
 /**
- * Class which models the state machine itself.
+ * Class which models the state machine itself
  *
  */
 public class FileReceiver implements Runnable {
-	private boolean onceThru = false;
 
+	// Socket
 	private DatagramSocket receivingSocket;
-	
 	// all states for this FSM
 	enum State {
 		WAIT0, WAIT1
@@ -37,7 +35,7 @@ public class FileReceiver implements Runnable {
 	private State currentState;
 	// 2D array defining all transitions that can occur
 	private Transition[][] transition;
-	//
+	// receivedFile
 	private FileOutputStream file;
 	// First Packet
 	private boolean firstPkt = true;
@@ -45,7 +43,7 @@ public class FileReceiver implements Runnable {
 	private int numberOfpkts;
 	// Received Packet
 	private DatagramPacket rcvpkt= new DatagramPacket(new byte[1400],1400);
-	//Filter
+	// Filter
 	private FilterSim filter;
 	// End of File reached
 	private boolean endOfFile = false;
@@ -53,6 +51,10 @@ public class FileReceiver implements Runnable {
 	private final static byte[] ACK0 = FileSenderFSM.genACK.apply(0);
 	// ACK1 ByteArray
 	private final static byte[] ACK1 = FileSenderFSM.genACK.apply(1);
+	// Paylod of all pkts which has been received from Sender
+	int byteCount = 0;
+	// Time when first pkt arrives at sender
+	long StartTime;
 
 	/**
 	 * constructor
@@ -72,8 +74,6 @@ public class FileReceiver implements Runnable {
 		// (undefined transitions will be ignored)
 		transition = new Transition[State.values().length] [Msg.values().length];
 
-		// transition[State.WAIT_FOR_CONNECTION.ordinal()] [Msg.INCOMMING_CONNECTION.ordinal()] = new EstablishConnection(); // unnötig
-
 		transition[State.WAIT0.ordinal()] [Msg.RCV_NOTCORRUPT_SEQ0.ordinal()] = new ProcessPacket(); 		// WAIT0 -> WAIT1
 		transition[State.WAIT0.ordinal()] [Msg.RESEND_ACK1.ordinal()] = new ResendAck();					// WAIT0 -> WAIT0
 		transition[State.WAIT1.ordinal()] [Msg.RCV_NOTCORRUPT_SEQ1.ordinal()] = new ProcessPacket();		// WAIT1 -> WAIT0
@@ -84,18 +84,20 @@ public class FileReceiver implements Runnable {
 
 	public static void main(String[] args) throws FileNotFoundException, SocketException {
 		FileReceiver receiver = new FileReceiver(9876);
-		receiver.run();
 
-		System.out.println("END - File received ");
+		receiver.run();
 	}
 
 	/**
 	 * the run method steers the transitions of the FSM.
 	 */
 	public void run() {
+
+
 		int count = 1;
 		while (!endOfFile) {
 			receive();
+
 			System.out.println("-------------------------------------------------");
 			if(!corrupt()&&hasSeq(currentState.ordinal())) {
 				System.out.println(">> Pkt.: " + count);
@@ -108,6 +110,12 @@ public class FileReceiver implements Runnable {
 				else processMsg(Msg.RESEND_ACK0);
 			}
 		}
+
+
+		long transTime = System.currentTimeMillis() - StartTime;
+		System.out.println("________________________________________");
+		System.out.println("Goodput: " + byteCount/transTime +" MBit/s");
+
 	}
 
 	/**
@@ -122,7 +130,6 @@ public class FileReceiver implements Runnable {
 		}
 	}
 
-
 	/**
 	 * Checks if the data of rcvpkt is corrupt
 	 *
@@ -135,7 +142,6 @@ public class FileReceiver implements Runnable {
 		crc.update(rcvpkt.getData(),8,rcvpkt.getLength()-8);
 		return receivedChecksum != crc.getValue();
 	}
-
 
 	/**
 	 *  Checks if the data of rcvpkt has the right sequence number
@@ -150,7 +156,7 @@ public class FileReceiver implements Runnable {
 
 	/**
 	 * Delivers data to the File Writer for writing the received bytes to a file
-	 *
+	 * Before it removes the header of the data.
 	 * @param data
 	 * @param off
 	 * @param length
@@ -158,6 +164,8 @@ public class FileReceiver implements Runnable {
 	private void deliverData(byte[]data, int off, int length) {
 		try {
 			if(firstPkt) {
+				StartTime = System.currentTimeMillis();
+
 				firstPkt= false;
 
 				numberOfpkts = ByteBuffer.wrap(data).getInt(12);										//  Number of Packets until terminating
@@ -180,6 +188,8 @@ public class FileReceiver implements Runnable {
 				off = off + lengthName;
 				length = length - lengthName;
 			}
+
+			byteCount = byteCount + data.length - off;
 
 			file.write(data,off,length);
 		} catch (IOException e) {
@@ -225,7 +235,6 @@ public class FileReceiver implements Runnable {
 
 	/**
 	 * Transition for processing received packet
-	 *
 	 */
 	class ProcessPacket extends Transition {		
 		@Override
@@ -240,7 +249,6 @@ public class FileReceiver implements Runnable {
 
 	/**
 	 * Transition for ResendACK
-	 *
 	 */
 	class ResendAck extends Transition {
 		@Override
