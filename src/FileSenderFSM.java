@@ -14,8 +14,9 @@ import java.util.zip.CRC32;
  * 3. Checksum implementieren (mit CRC32) [x]
  * 4. Paketstruktur implementieren [x]
  *
- *      Paketstruktur insgesamt 1400 Byte  ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Daten: 1388 Byte] [x]
- *      Paketstruktur erstes Paket         ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Anzahl Pakete: int 4 Byte | Daten: 1384 Byte]
+ *     Paketstruktur insgesamt 1400 Byte  ->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Daten: 1388 Byte] [x]
+ *
+ *     Paketstruktur erstes Paket variabel->  [Checksum: long 8 Byte | Sequenznummer: int 4 Byte | Anzahl Pakete: int 4 Byte | Anzahl der benötigten Bytes für FileName: int 4 Byte | FileName: variabel | Daten: RestX Byte]
  *
  *
  * 5. send() [x]
@@ -31,10 +32,14 @@ import java.util.zip.CRC32;
  *
  *
  * 9. Übertragung FileName implementieren.
- * 10. Verlust implementieren
+ * 10. Verlust implementieren [x]
  * 11. Fin implementieren
  */
 
+/**
+ * Final State Machine which is a acts as a FileSender
+ *
+ */
 public class FileSenderFSM implements Runnable {
     /**
      * Finate State Machine (FSM) Java Example: Woman
@@ -141,6 +146,7 @@ public class FileSenderFSM implements Runnable {
      */
     public static void main(String[] args) throws IOException {
 
+
         // INPUT: File To Send
         String localFileName = args[0];        // Program-Argument: READFile.txt
 
@@ -155,12 +161,14 @@ public class FileSenderFSM implements Runnable {
     /**
      * Run Method
      *
+     *
      * Directs the transitions of the FSM for sending the InputFile.
+     *
      */
     @Override
     public void run() {
         try {
-            while(inputFile.available() != 0) {
+            while(inputFile.available() > 0) {
                 System.out.println("-------------------------------------------------");
                 processMsg(Msg.RDT_SEND);
                 while(!receive() || isCorruptORNotACK()) {
@@ -276,10 +284,9 @@ public class FileSenderFSM implements Runnable {
         byte[] headerCheckSum = ByteBuffer.allocate(8).putLong(crc.getValue()).array();
         System.arraycopy(headerCheckSum,0, dataForReceiver,0,headerCheckSum.length);       // add headerCheckSum to DataArray
 
-        // System.out.println(ByteBuffer.wrap(dataForReceiver).getInt(12));                 //
+        // System.out.println(ByteBuffer.wrap(dataForReceiver).getInt(12));                //
         return new DatagramPacket(dataForReceiver, dataForReceiver.length);
     }
-
 
 
     /**
@@ -294,29 +301,42 @@ public class FileSenderFSM implements Runnable {
 
             try {
                 if(firstPkt){
-                    int numberOfpkts = Math.max(1,(int)((inputFile.available()-1388-4)/1388+2));            // +2 weil... abrunden + erstes pkt
+                    firstPkt = false;
+                    inputFile.read(dataForReceiver,12+4+4+fileName.getBytes().length, dataForReceiver.length-12-4-4-fileName.getBytes().length);
 
-                    //System.out.println(numberOfpkts);
+                    //System.out.println(new String(dataForReceiver));
 
-                    inputFile.read(dataForReceiver,12+4, dataForReceiver.length-12-4);
-
-                    byte[] headerPkts = ByteBuffer.allocate(4).putInt(numberOfpkts).array();
-
-                    System.arraycopy(headerPkts,0,dataForReceiver,12,headerPkts.length);
-                    //System.out.println(dataForReceiver[15]);
-
+                    int numberOfpkts = (int) Math.ceil((inputFile.available()/(double)1388+ 1));
 
                     /**
-                    ByteBuffer.wrap(fileName.getBytes());
-                    byte[] headerPkts = ByteBuffer.allocate(4).putInt(fileName.toCharArray().length);
-                    System.arraycopy(,0,dataForReceiver,16,);
+                    System.out.println((inputFile.available()-1388-20-fileName.getBytes().length)/(double)1388+ 1);
+                    System.out.println(Math.ceil((inputFile.available()-1388-4)/(double)1388 + 1));
                     **/
 
-                    firstPkt = false;
+                    System.out.println("End after "+ numberOfpkts);
+                    byte[] headerPkts = ByteBuffer.allocate(4).putInt(numberOfpkts).array();
+                    System.arraycopy(headerPkts,0,dataForReceiver,12,headerPkts.length);
+
+                    // FileName
+
+                    /**fileName.getBytes()
+                    ByteBuffer.wrap(fileName.getBytes()).asCharBuffer().toString();
+                    **/
+
+                    System.out.println(fileName.getBytes().length);
+                    byte[] headerNumberForBytesName = ByteBuffer.allocate(4).putInt(fileName.getBytes().length).array();
+                    System.arraycopy(headerNumberForBytesName,0,dataForReceiver,12+4,headerNumberForBytesName.length);
+
+                    byte[] NameData = ByteBuffer.allocate(fileName.getBytes().length).put(fileName.getBytes()).array();
+
+                    System.arraycopy(NameData,0,dataForReceiver,12+4+4,NameData.length);
+                    System.out.println(new String(NameData));
+
+                    System.out.println(new String(Arrays.copyOfRange(dataForReceiver,20,20+fileName.getBytes().length)));
+
                 } else {
                     inputFile.read(dataForReceiver,12, dataForReceiver.length-12);      // reads 1388 Bytes and keeps 12Bytes empty for the header
                 }
-
 
                 if(currentState == State.WAIT0) {
                     sndpkt = makePacket(State.WAIT0.ordinal());         // sndpkt = make_pkt(0,checksum,data)

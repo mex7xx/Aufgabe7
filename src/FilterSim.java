@@ -26,9 +26,9 @@ public class FilterSim {
     }
 
     /**
+     * reads incoming packets with filter.
      *
-     *
-     * @return Datagram Packet,
+     * @return Datagram Packet
      */
     public DatagramPacket read() throws IOException {
 
@@ -41,7 +41,7 @@ public class FilterSim {
 
             double rand = Math.random();
 
-            if (rand <= 0.1) {												// FehlerSimmulation: Paket wird verworfen  == 10%
+            if (rand <= 0.1) {												// FehlerSimmulation: Paket wird verloren  == 10%
                 nothingReceived = true;                                     // Receiver
             } else {
                 if (rand <= 0.5) {                            				// FehlerSimmulation: Bitfehler == 40%
@@ -62,5 +62,4 @@ public class FilterSim {
         }
         return rcvpkt;
     }
-
 }

@@ -5,7 +5,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
-import java.util.Random;
+import java.util.Arrays;
 import java.util.zip.CRC32;
 
 /**
@@ -42,7 +42,9 @@ public class FileReceiver implements Runnable {
 	// Number of Pkts which FSM receives.
 	private int numberOfpkts;
 	// Received Packet
-	DatagramPacket rcvpkt= new DatagramPacket(new byte[1400],1400);
+	private DatagramPacket rcvpkt= new DatagramPacket(new byte[1400],1400);
+	//Filter
+	private FilterSim filter;
 	// End of File reached
 	private boolean endOfFile = false;
 	// ACK0 ByteArray
@@ -57,9 +59,14 @@ public class FileReceiver implements Runnable {
 	public FileReceiver(int receivingPort) throws FileNotFoundException, SocketException {
 		currentState = State.WAIT0;
 
+
+		//TODO:
 		file = new FileOutputStream("Recieved_File.txt");
 
+		// init Socket
 		receivingSocket = new DatagramSocket(receivingPort);
+		// init Filter Class
+		filter = new FilterSim(receivingSocket);
 
 		// define all valid state transitions for our state machine
 		// (undefined transitions will be ignored)
@@ -112,14 +119,20 @@ public class FileReceiver implements Runnable {
 	 */
 	public void receive() {
 		try {
-			FilterSim filter = new FilterSim(receivingSocket);
-			rcvpkt = filter.read();											// Simulates Transfer-Failures and Errors of the data
+
+			rcvpkt = filter.read();							// Simulates Transfer-Failures and Errors in the received data
 
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 	}
 
+
+	/**
+	 * Checks if the data of rcvpkt is corrupt
+	 *
+	 * @return boolean
+     */
 	public boolean corrupt() {
 		long receivedChecksum = ByteBuffer.wrap(rcvpkt.getData(),0,8).getLong();
 
@@ -128,12 +141,21 @@ public class FileReceiver implements Runnable {
 		return receivedChecksum != crc.getValue();
 	}
 
+
+	/**
+	 *  Checks if the data of rcvpkt has the right sequence number
+	 *
+	 * @param number sequence number
+	 * @return boolean
+     */
 	public boolean hasSeq(int number) {
 		int receivedNumber = ByteBuffer.wrap(rcvpkt.getData(),8,4).getInt();
 		return number == receivedNumber;
 	}
 
 	/**
+	 *
+	 * Delivers data to the File Writer for writing the received bytes to a file
 	 *
 	 * @param data
 	 * @param off
@@ -142,11 +164,26 @@ public class FileReceiver implements Runnable {
 	public void deliverData(byte[]data, int off, int length) {
 		try {
 			if(firstPkt) {
-				numberOfpkts = ByteBuffer.wrap(data).getInt(12);
-				System.out.println(" >> Header of 1st pkt: [Number of Pkts]: " + numberOfpkts);
+				firstPkt= false;
+
+				numberOfpkts = ByteBuffer.wrap(data).getInt(12);										//  Number of Packets until terminating
+				System.out.println("  >> Header of 1st pkt: [Number of Pkts]: " + numberOfpkts);
 				off = off+4;
 				length = length -4;
-				firstPkt= false;
+
+
+				int lengthName = ByteBuffer.wrap(data).getInt(16);										// Number of Bytes for the transferd FileName
+				System.out.println(lengthName);
+
+				off = off + 4;
+				length = length - 4;
+
+				//name = new byte[lengthName];
+				String s = new String (Arrays.copyOfRange(data,20,20+lengthName));
+				System.out.println(s);
+
+				off = off + lengthName;
+				length = length - lengthName;
 			}
 
 			file.write(data,off,length);
@@ -154,6 +191,12 @@ public class FileReceiver implements Runnable {
 			e.printStackTrace();
 		}
 	}
+
+	/**
+	 * Sends a ACK with a SeqNr. to the Sender.
+	 *
+	 * @param SeqNr
+     */
 	public void sendACK(int SeqNr) {
 		try {
 			if(SeqNr == 0) receivingSocket.send(new DatagramPacket(ACK0,ACK0.length,rcvpkt.getAddress(),rcvpkt.getPort()));
@@ -173,7 +216,7 @@ public class FileReceiver implements Runnable {
 		if(trans != null){
 			currentState = trans.execute(input);
 		}
-		System.out.println("INFO State: "+currentState);
+		System.out.println("INFO State: "+ currentState);
 	}
 	
 	/**
@@ -184,7 +227,11 @@ public class FileReceiver implements Runnable {
 	abstract class Transition {
 		abstract public State execute(Msg input);
 	}
-	
+
+	/**
+	 * Transition for processing received packet
+	 *
+	 */
 	class ProcessPacket extends Transition {		
 		@Override
 		public State execute(Msg input) {
@@ -195,7 +242,11 @@ public class FileReceiver implements Runnable {
 			return State.values()[Math.abs(input.ordinal() - 1)];
 		}
 	}
-	
+
+	/**
+	 * Transition for ResendACK
+	 *
+	 */
 	class ResendAck extends Transition {
 		@Override
 		public State execute(Msg input) {
